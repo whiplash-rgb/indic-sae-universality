@@ -1,0 +1,51 @@
+root@fd4bc2ac9a31:/workspace/projects/BLACKBOXNLP-2026# python - <<'PY'
+import torch, itertools, config as C
+vs = {}
+for m in ["random_hindi","random_marathi","random_bengali","random_hindi_b","random_bengali_b"]:
+    sd = torch.load(C.CHECKPOINTS[m], map_location="cpu", weights_only=False)["model"]
+    v = torch.cat([p.flatten() for p in sd.values()]).float()
+    vs[m] = v / v.norm()
+for a, b in itertools.combinations(vs, 2):
+    print(f"V1 {a:16s} vs {b:16s}: cos = {float(vs[a] @ vs[b]):+.6f}")
+PY
+
+output:
+
+V1 random_hindi     vs random_marathi  : cos = +0.012289
+V1 random_hindi     vs random_bengali  : cos = +0.012317
+V1 random_hindi     vs random_hindi_b  : cos = +0.013076
+V1 random_hindi     vs random_bengali_b: cos = +0.012493
+V1 random_marathi   vs random_bengali  : cos = +0.012818
+V1 random_marathi   vs random_hindi_b  : cos = +0.012653
+V1 random_marathi   vs random_bengali_b: cos = +0.013357
+V1 random_bengali   vs random_hindi_b  : cos = +0.011331
+V1 random_bengali   vs random_bengali_b: cos = +0.011697
+V1 random_hindi_b   vs random_bengali_b: cos = +0.014275
+root@fd4bc2ac9a31:/workspace/projects/BLACKBOXNLP-2026# 
+
+
+root@fd4bc2ac9a31:/workspace/projects/BLACKBOXNLP-2026# python - <<'PY'
+import torch, itertools, config as C
+sds = {m: torch.load(C.CHECKPOINTS[m], map_location="cpu", weights_only=False)["model"]
+       for m in ["random_hindi","random_marathi","random_bengali","random_hindi_b","random_bengali_b"]}
+a, b = sds["random_hindi"], sds["random_marathi"]
+const = {k for k in a if torch.equal(a[k], b[k])}
+print("constant-init (non-random) keys shared by ALL inits:", sorted(const))
+vs = {}
+for m, sd in sds.items():
+    v = torch.cat([sd[k].flatten() for k in sd if k not in const]).float()
+    vs[m] = v / v.norm()
+for x, y in itertools.combinations(vs, 2):
+    print(f"V1-random-only {x:16s} vs {y:16s}: cos = {float(vs[x] @ vs[y]):+.6f}")
+PY
+constant-init (non-random) keys shared by ALL inits: ['transformer.h.0.ln_1.weight', 'transformer.h.0.ln_2.weight', 'transformer.h.1.ln_1.weight', 'transformer.h.1.ln_2.weight', 'transformer.h.2.ln_1.weight', 'transformer.h.2.ln_2.weight', 'transformer.h.3.ln_1.weight', 'transformer.h.3.ln_2.weight', 'transformer.h.4.ln_1.weight', 'transformer.h.4.ln_2.weight', 'transformer.h.5.ln_1.weight', 'transformer.h.5.ln_2.weight', 'transformer.ln_f.weight']
+V1-random-only random_hindi     vs random_marathi  : cos = +0.000257
+V1-random-only random_hindi     vs random_bengali  : cos = +0.000304
+V1-random-only random_hindi     vs random_hindi_b  : cos = +0.001054
+V1-random-only random_hindi     vs random_bengali_b: cos = +0.000460
+V1-random-only random_marathi   vs random_bengali  : cos = +0.000813
+V1-random-only random_marathi   vs random_hindi_b  : cos = +0.000627
+V1-random-only random_marathi   vs random_bengali_b: cos = +0.001336
+V1-random-only random_bengali   vs random_hindi_b  : cos = -0.000692
+V1-random-only random_bengali   vs random_bengali_b: cos = -0.000326
+V1-random-only random_hindi_b   vs random_bengali_b: cos = +0.002264

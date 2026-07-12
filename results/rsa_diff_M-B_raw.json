@@ -1,0 +1,17 @@
+{
+  "label": "M-B_raw",
+  "n_concepts": 199,
+  "rho_trained": 0.36773193922158337,
+  "rho_floor": 0.36045500621509147,
+  "delta": 0.0072769330064919036,
+  "ci_lo": -0.11369674098956133,
+  "ci_hi": 0.1302263012186287,
+  "boots": 10000,
+  "ci_excludes_zero": false,
+  "bonferroni_m": 3,
+  "ci_corrected_level": 0.9833333333333333,
+  "ci_corrected_lo": -0.1364594289601742,
+  "ci_corrected_hi": 0.15647801675162445,
+  "ci_corrected_excludes_zero": false,
+  "common_with": []
+}

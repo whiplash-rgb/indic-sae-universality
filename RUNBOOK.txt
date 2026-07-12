@@ -1,0 +1,333 @@
+BLACKBOXNLP-2026 — SHUFFLED-PROTOCOL PIPELINE (v2, 2026-07-11)
+Run on the pod, top to bottom. Supersedes the first-slice runbook after the ordering
+audit ESCALATED Marathi (C2ST AUC 0.942) and marginally Bengali (0.553); Hindi clean
+(0.498). Decision: ALL extractions use --shuffle-stories (random sample of the full
+corpus). Old first-slice numbers are kept ONLY as the ordering-robustness baseline.
+
+TWO PROTOCOL RULES (breaking either invalidates the run):
+
+  RULE 1 — occurrence protocol is min-occ = 60, fixed-occ = 60 EVERYWHERE.
+    (The previous runbook said 100 — that was drift. The validated 2026-07-05 run and
+    the paper both use 60; verified from the stored signatures: n_occ_used == 60 for
+    every concept in every concept_sig_*.npz. Using 100 would change the concept sets
+    (130/198) and silently break the old-vs-new ordering comparison.)
+
+  RULE 2 — SEED PLAN for --shuffle-seed:
+        language   trained model   floor model(s)              shuffle-seed
+        Hindi      hindi_54M       random_hindi, random_hindi_b     101
+        Marathi    marathi_54M     random_marathi                   202
+        Bengali    bengali_54M     random_bengali, random_bengali_b 303
+    SAME seed within a language: trained and floor must see the byte-identical story
+    sample (the ladder is a paired design; "never mix protocols across trained/floor").
+    DIFFERENT seeds across languages: Marathi and Bengali both have exactly 2,000,000
+    stories, so a shared seed would produce the IDENTICAL permutation and preserve
+    cross-corpus index alignment — the artifact we are breaking.
+
+ORDERING INSIDE EACH LANGUAGE BLOCK: everything that needs the 25 GB activation
+memmap runs BEFORE that model's rm -rf — probes (SAE + raw), T5 honest ceiling,
+A8 hierarchy eval, and the 2 GB eval slice. Deleting early = full re-extraction.
+
+Folders on the pod (unchanged):
+  code         /workspace/projects/BLACKBOXNLP-2026
+  checkpoints  /workspace/checkpoints/checkpoints-pytorch
+  activations  /workspace/activations      (25 GB memmaps, deleted per model)
+  cache        /workspace/cache            (HF downloads; each corpus ~5-6 GB)
+  outputs      /workspace/outputs          (SAEs, signatures, RSA json, hier json)
+
+RAM note: each corpus is ONE train.json (5-6 GB); the reader parses it wholesale and
+--shuffle-stories holds the story list in RAM. Budget ~40-60 GB RAM headroom. Disk
+peak per block is ONE memmap (~26 GB) + eval slices (~2 GB each) + cache.
+
+
+STEP 0 — set up the shell  [ESSENTIAL]
+
+cd /workspace/projects/BLACKBOXNLP-2026
+export CKPT_DIR=/workspace/checkpoints/checkpoints-pytorch
+export ARTIFACT_DIR=/workspace/activations
+export SAE_CKPT_DIR=/workspace/outputs
+mkdir -p /workspace/logs $ARTIFACT_DIR/eval
+pip install -q -U transformers huggingface_hub scipy numpy pyarrow matplotlib
+
+Check the 3 trained models load with identical shapes (expect 6 512 68096 on all):
+python - <<'PY'
+import torch, config as C
+for m in ["hindi_54M","marathi_54M","bengali_54M"]:
+    a = torch.load(C.CHECKPOINTS[m], map_location="cpu", weights_only=False)["model_args"]
+    print(m, a["n_layer"], a["n_embd"], a["vocab_size"])
+PY
+
+Tier-0 provenance — checkpoint hash manifest (extract_real also embeds ckpt_sha256
+into each meta.json; Step 6 cross-checks):
+sha256sum $CKPT_DIR/ckpt_sarvam_54M_*.pt | tee $SAE_CKPT_DIR/ckpt_manifest.sha256
+
+
+STEP 1 — random models  [floors ESSENTIAL; _b pair RECOMMENDED = T4b]
+
+python make_random_model.py --like hindi_54M --seed 1 --out $CKPT_DIR/random_hindi.pt
+python make_random_model.py --like hindi_54M --seed 2 --out $CKPT_DIR/random_marathi.pt
+python make_random_model.py --like hindi_54M --seed 3 --out $CKPT_DIR/random_bengali.pt
+# T4b second floor pair for H-B (independent INIT seeds; same per-language SHUFFLE seed):
+python make_random_model.py --like hindi_54M --seed 4 --out $CKPT_DIR/random_hindi_b.pt
+python make_random_model.py --like hindi_54M --seed 5 --out $CKPT_DIR/random_bengali_b.pt
+
+V1 seed-independence check (want |cos| ~ 0 for every pair)  [ESSENTIAL, seconds]:
+python - <<'PY'
+import torch, itertools, config as C
+vs = {}
+for m in ["random_hindi","random_marathi","random_bengali","random_hindi_b","random_bengali_b"]:
+    sd = torch.load(C.CHECKPOINTS[m], map_location="cpu", weights_only=False)["model"]
+    v = torch.cat([p.flatten() for p in sd.values()]).float()
+    vs[m] = v / v.norm()
+for a, b in itertools.combinations(vs, 2):
+    print(f"V1 {a:16s} vs {b:16s}: cos = {float(vs[a] @ vs[b]):+.6f}")
+PY
+Save that output into /workspace/logs/v1_seed_independence.txt (copy-paste or tee).
+
+
+SMOKE TEST — 15 min, validates every new code path before the big run  [RECOMMENDED]
+
+python extract_real.py --model hindi_54M --layer 3 --target-tokens 2500000 \
+       --shuffle-stories --shuffle-seed 999 --hf-cache /workspace/cache \
+       --out-dir $ARTIFACT_DIR/smoke
+python train_batchtopk.py --acts $ARTIFACT_DIR/smoke --steps 600 --out $SAE_CKPT_DIR/smoke_sae.pt
+python concept_probe.py --model hindi_54M --acts $ARTIFACT_DIR/smoke \
+       --sae $SAE_CKPT_DIR/smoke_sae.pt --tag smoke --min-occ 10 --fixed-occ 10
+python concept_probe.py --model hindi_54M --acts $ARTIFACT_DIR/smoke \
+       --raw --tag smoke_raw --min-occ 10 --fixed-occ 10
+python hierarchy_eval.py --sae $SAE_CKPT_DIR/smoke_sae.pt --acts $ARTIFACT_DIR/smoke \
+       --tokens 200000 --out $SAE_CKPT_DIR/smoke_hier.json
+python save_eval_slice.py --src $ARTIFACT_DIR/smoke --out $ARTIFACT_DIR/smoke_slice --rows 100000
+rm -rf $ARTIFACT_DIR/smoke $ARTIFACT_DIR/smoke_slice
+rm -f  $SAE_CKPT_DIR/smoke_sae.pt $SAE_CKPT_DIR/concept_sig_smoke*.npz $SAE_CKPT_DIR/smoke_hier.json
+All six commands must finish without error. Health numbers will look bad at 600 steps — ignore.
+
+
+STEP 2 — HINDI  [GPU; ~2.5-3.5 h; shuffle-seed 101]
+
+# 2a. trained model
+python extract_real.py --model hindi_54M --layer 3 --target-tokens 25000000 \
+       --shuffle-stories --shuffle-seed 101 --hf-cache /workspace/cache
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/hindi_54M_layer3 \
+       2>&1 | tee /workspace/logs/sae_hindi.log
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/hindi_54M_layer3 --seed 1 \
+       --out $SAE_CKPT_DIR/hindi_54M_layer3_batchtopk_seed1.pt \
+       2>&1 | tee /workspace/logs/sae_hindi_seed1.log
+python concept_probe.py --model hindi_54M --acts $ARTIFACT_DIR/real/hindi_54M_layer3 \
+       --min-occ 60 --fixed-occ 60
+python concept_probe.py --model hindi_54M --acts $ARTIFACT_DIR/real/hindi_54M_layer3 \
+       --sae $SAE_CKPT_DIR/hindi_54M_layer3_batchtopk_seed1.pt --tag hindi_seed1 \
+       --min-occ 60 --fixed-occ 60
+# T5 honest ceiling [RECOMMENDED]: seed-1 SAE on a DIFFERENT occurrence subsample
+python concept_probe.py --model hindi_54M --acts $ARTIFACT_DIR/real/hindi_54M_layer3 \
+       --sae $SAE_CKPT_DIR/hindi_54M_layer3_batchtopk_seed1.pt --tag hindi_seed1_occ1 \
+       --min-occ 60 --fixed-occ 60 --occ-seed 1
+# T6 raw-residual signatures [RECOMMENDED; nearly free now, a re-extraction later]
+python concept_probe.py --model hindi_54M --acts $ARTIFACT_DIR/real/hindi_54M_layer3 \
+       --raw --tag hindi_raw --min-occ 60 --fixed-occ 60
+# A8 hierarchy eval [ESSENTIAL — RQ1 is empty without it]
+python hierarchy_eval.py --sae $SAE_CKPT_DIR/hindi_54M_layer3_batchtopk.pt \
+       --acts $ARTIFACT_DIR/real/hindi_54M_layer3 --out $SAE_CKPT_DIR/hier_hindi.json
+# insurance slice for A8 re-runs [RECOMMENDED; ~2 GB]
+python save_eval_slice.py --src $ARTIFACT_DIR/real/hindi_54M_layer3 \
+       --out $ARTIFACT_DIR/eval/hindi_54M_layer3_eval2M
+# provenance: keep the meta (shuffle seed + ckpt sha) before deleting the memmap
+cp $ARTIFACT_DIR/real/hindi_54M_layer3/meta.json $SAE_CKPT_DIR/meta_hindi_54M.json
+rm -rf $ARTIFACT_DIR/real/hindi_54M_layer3        # <- ONLY after all of the above
+
+# 2b. floor model (SAME shuffle seed 101 — floor sees the SAME story sample)
+python extract_real.py --model random_hindi --layer 3 --target-tokens 25000000 \
+       --shuffle-stories --shuffle-seed 101 --hf-cache /workspace/cache
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/random_hindi_layer3 \
+       2>&1 | tee /workspace/logs/sae_random_hindi.log
+python concept_probe.py --model random_hindi --acts $ARTIFACT_DIR/real/random_hindi_layer3 \
+       --tag random_hindi --min-occ 60 --fixed-occ 60
+python concept_probe.py --model random_hindi --acts $ARTIFACT_DIR/real/random_hindi_layer3 \
+       --raw --tag random_hindi_raw --min-occ 60 --fixed-occ 60
+cp $ARTIFACT_DIR/real/random_hindi_layer3/meta.json $SAE_CKPT_DIR/meta_random_hindi.json
+rm -rf $ARTIFACT_DIR/real/random_hindi_layer3
+
+# 2c. T4b second floor, Hindi side [RECOMMENDED; same shuffle seed 101]
+python extract_real.py --model random_hindi_b --layer 3 --target-tokens 25000000 \
+       --shuffle-stories --shuffle-seed 101 --hf-cache /workspace/cache
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/random_hindi_b_layer3 \
+       2>&1 | tee /workspace/logs/sae_random_hindi_b.log
+python concept_probe.py --model random_hindi_b --acts $ARTIFACT_DIR/real/random_hindi_b_layer3 \
+       --tag random_hindi_b --min-occ 60 --fixed-occ 60
+cp $ARTIFACT_DIR/real/random_hindi_b_layer3/meta.json $SAE_CKPT_DIR/meta_random_hindi_b.json
+rm -rf $ARTIFACT_DIR/real/random_hindi_b_layer3
+
+Check: outputs now has concept_sig_{hindi,hindi_seed1,hindi_seed1_occ1,hindi_raw,
+random_hindi,random_hindi_raw,random_hindi_b}.npz and hier_hindi.json.
+
+
+STEP 3 — MARATHI  [GPU; ~2 h; shuffle-seed 202]
+
+python extract_real.py --model marathi_54M --layer 3 --target-tokens 25000000 \
+       --shuffle-stories --shuffle-seed 202 --hf-cache /workspace/cache
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/marathi_54M_layer3 \
+       2>&1 | tee /workspace/logs/sae_marathi.log
+python concept_probe.py --model marathi_54M --acts $ARTIFACT_DIR/real/marathi_54M_layer3 \
+       --min-occ 60 --fixed-occ 60
+python concept_probe.py --model marathi_54M --acts $ARTIFACT_DIR/real/marathi_54M_layer3 \
+       --raw --tag marathi_raw --min-occ 60 --fixed-occ 60
+python hierarchy_eval.py --sae $SAE_CKPT_DIR/marathi_54M_layer3_batchtopk.pt \
+       --acts $ARTIFACT_DIR/real/marathi_54M_layer3 --out $SAE_CKPT_DIR/hier_marathi.json
+python save_eval_slice.py --src $ARTIFACT_DIR/real/marathi_54M_layer3 \
+       --out $ARTIFACT_DIR/eval/marathi_54M_layer3_eval2M
+cp $ARTIFACT_DIR/real/marathi_54M_layer3/meta.json $SAE_CKPT_DIR/meta_marathi_54M.json
+rm -rf $ARTIFACT_DIR/real/marathi_54M_layer3
+
+python extract_real.py --model random_marathi --layer 3 --target-tokens 25000000 \
+       --shuffle-stories --shuffle-seed 202 --hf-cache /workspace/cache
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/random_marathi_layer3 \
+       2>&1 | tee /workspace/logs/sae_random_marathi.log
+python concept_probe.py --model random_marathi --acts $ARTIFACT_DIR/real/random_marathi_layer3 \
+       --tag random_marathi --min-occ 60 --fixed-occ 60
+python concept_probe.py --model random_marathi --acts $ARTIFACT_DIR/real/random_marathi_layer3 \
+       --raw --tag random_marathi_raw --min-occ 60 --fixed-occ 60
+cp $ARTIFACT_DIR/real/random_marathi_layer3/meta.json $SAE_CKPT_DIR/meta_random_marathi.json
+rm -rf $ARTIFACT_DIR/real/random_marathi_layer3
+
+
+STEP 4 — BENGALI  [GPU; ~2.5 h; shuffle-seed 303]
+(sae_bengali.log also records the Bengali GATE-1 health block quoted in the paper.)
+
+python extract_real.py --model bengali_54M --layer 3 --target-tokens 25000000 \
+       --shuffle-stories --shuffle-seed 303 --hf-cache /workspace/cache
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/bengali_54M_layer3 \
+       2>&1 | tee /workspace/logs/sae_bengali.log
+python concept_probe.py --model bengali_54M --acts $ARTIFACT_DIR/real/bengali_54M_layer3 \
+       --min-occ 60 --fixed-occ 60
+python concept_probe.py --model bengali_54M --acts $ARTIFACT_DIR/real/bengali_54M_layer3 \
+       --raw --tag bengali_raw --min-occ 60 --fixed-occ 60
+python hierarchy_eval.py --sae $SAE_CKPT_DIR/bengali_54M_layer3_batchtopk.pt \
+       --acts $ARTIFACT_DIR/real/bengali_54M_layer3 --out $SAE_CKPT_DIR/hier_bengali.json
+python save_eval_slice.py --src $ARTIFACT_DIR/real/bengali_54M_layer3 \
+       --out $ARTIFACT_DIR/eval/bengali_54M_layer3_eval2M
+cp $ARTIFACT_DIR/real/bengali_54M_layer3/meta.json $SAE_CKPT_DIR/meta_bengali_54M.json
+rm -rf $ARTIFACT_DIR/real/bengali_54M_layer3
+
+python extract_real.py --model random_bengali --layer 3 --target-tokens 25000000 \
+       --shuffle-stories --shuffle-seed 303 --hf-cache /workspace/cache
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/random_bengali_layer3 \
+       2>&1 | tee /workspace/logs/sae_random_bengali.log
+python concept_probe.py --model random_bengali --acts $ARTIFACT_DIR/real/random_bengali_layer3 \
+       --tag random_bengali --min-occ 60 --fixed-occ 60
+python concept_probe.py --model random_bengali --acts $ARTIFACT_DIR/real/random_bengali_layer3 \
+       --raw --tag random_bengali_raw --min-occ 60 --fixed-occ 60
+cp $ARTIFACT_DIR/real/random_bengali_layer3/meta.json $SAE_CKPT_DIR/meta_random_bengali.json
+rm -rf $ARTIFACT_DIR/real/random_bengali_layer3
+
+# T4b second floor, Bengali side [RECOMMENDED; same shuffle seed 303]
+python extract_real.py --model random_bengali_b --layer 3 --target-tokens 25000000 \
+       --shuffle-stories --shuffle-seed 303 --hf-cache /workspace/cache
+python train_batchtopk.py --acts $ARTIFACT_DIR/real/random_bengali_b_layer3 \
+       2>&1 | tee /workspace/logs/sae_random_bengali_b.log
+python concept_probe.py --model random_bengali_b --acts $ARTIFACT_DIR/real/random_bengali_b_layer3 \
+       --tag random_bengali_b --min-occ 60 --fixed-occ 60
+cp $ARTIFACT_DIR/real/random_bengali_b_layer3/meta.json $SAE_CKPT_DIR/meta_random_bengali_b.json
+rm -rf $ARTIFACT_DIR/real/random_bengali_b_layer3
+
+Health reminders: trained SAEs FVE ~80% / 0% dead = GOOD (ignore the stale >=85% FAIL
+text). Random SAEs FVE ~99.9% / ~75% dead = EXPECTED.
+
+
+STEP 5 — statistics  [CPU on the pod; minutes total]
+
+# 5a. main ladder [ESSENTIAL] — T4a settings baked in (10k resamples, Bonferroni m=3)
+python rsa_match.py --a concept_sig_hindi.npz   --b concept_sig_marathi.npz --label H-M
+python rsa_match.py --a concept_sig_hindi.npz   --b concept_sig_bengali.npz --label H-B
+python rsa_match.py --a concept_sig_marathi.npz --b concept_sig_bengali.npz --label M-B
+python rsa_match.py --a concept_sig_random_hindi.npz   --b concept_sig_random_marathi.npz --label floor_H-M
+python rsa_match.py --a concept_sig_random_hindi.npz   --b concept_sig_random_bengali.npz --label floor_H-B
+python rsa_match.py --a concept_sig_random_marathi.npz --b concept_sig_random_bengali.npz --label floor_M-B
+python rsa_match.py --a concept_sig_hindi.npz --b concept_sig_hindi_seed1.npz --label ceiling_H
+python rsa_match.py --a concept_sig_hindi.npz --b concept_sig_hindi_seed1_occ1.npz --label ceiling_H_honest
+
+python rsa_diff.py --ta concept_sig_hindi.npz   --tb concept_sig_marathi.npz \
+       --fa concept_sig_random_hindi.npz   --fb concept_sig_random_marathi.npz \
+       --label H-M --boots 10000 --bonferroni 3
+python rsa_diff.py --ta concept_sig_hindi.npz   --tb concept_sig_bengali.npz \
+       --fa concept_sig_random_hindi.npz   --fb concept_sig_random_bengali.npz \
+       --label H-B --boots 10000 --bonferroni 3
+python rsa_diff.py --ta concept_sig_marathi.npz --tb concept_sig_bengali.npz \
+       --fa concept_sig_random_marathi.npz --fb concept_sig_random_bengali.npz \
+       --label M-B --boots 10000 --bonferroni 3
+
+# 5b. T4b floor replication [RECOMMENDED]
+python rsa_match.py --a concept_sig_random_hindi_b.npz --b concept_sig_random_bengali_b.npz --label floor_H-B_b
+python rsa_diff.py --ta concept_sig_hindi.npz --tb concept_sig_bengali.npz \
+       --fa concept_sig_random_hindi_b.npz --fb concept_sig_random_bengali_b.npz \
+       --label H-B_floorB --boots 10000 --bonferroni 3
+
+# 5c. T4c common-set ladder [ESSENTIAL — preview on old data already shows the M-B
+#     floor drops 0.416->0.319 on the common set; must be recomputed on shuffled data]
+python rsa_diff.py --ta concept_sig_marathi.npz --tb concept_sig_bengali.npz \
+       --fa concept_sig_random_marathi.npz --fb concept_sig_random_bengali.npz \
+       --label M-B_common --boots 10000 --bonferroni 3 \
+       --common-with concept_sig_hindi.npz concept_sig_random_hindi.npz
+
+# 5d. T6 raw-residual ladder [RECOMMENDED]
+python rsa_diff.py --ta concept_sig_hindi_raw.npz   --tb concept_sig_marathi_raw.npz \
+       --fa concept_sig_random_hindi_raw.npz   --fb concept_sig_random_marathi_raw.npz \
+       --label H-M_raw --boots 10000 --bonferroni 3
+python rsa_diff.py --ta concept_sig_hindi_raw.npz   --tb concept_sig_bengali_raw.npz \
+       --fa concept_sig_random_hindi_raw.npz   --fb concept_sig_random_bengali_raw.npz \
+       --label H-B_raw --boots 10000 --bonferroni 3
+python rsa_diff.py --ta concept_sig_marathi_raw.npz --tb concept_sig_bengali_raw.npz \
+       --fa concept_sig_random_marathi_raw.npz --fb concept_sig_random_bengali_raw.npz \
+       --label M-B_raw --boots 10000 --bonferroni 3
+
+# 5e. A8 figure [ESSENTIAL]
+python hierarchy_eval.py --plot $SAE_CKPT_DIR/hier_hindi.json $SAE_CKPT_DIR/hier_marathi.json \
+       $SAE_CKPT_DIR/hier_bengali.json --pdf $SAE_CKPT_DIR/figures/hierarchy.pdf
+
+
+STEP 6 — provenance close-out + copy results off the pod  [ESSENTIAL]
+
+# Tier-0 cross-check: the ckpt_sha256 embedded in each meta_*.json must match Step 0's manifest
+python - <<'PY'
+import json, glob
+man = {l.split()[1].split("/")[-1]: l.split()[0]
+       for l in open("/workspace/outputs/ckpt_manifest.sha256")}
+for f in sorted(glob.glob("/workspace/outputs/meta_*.json")):
+    m = json.load(open(f))
+    name = f.split("meta_")[-1].replace(".json", "")
+    print(f, "shuffle_seed =", m["shuffle_seed"], "| ckpt_sha256 =", m["ckpt_sha256"][:16], "...")
+PY
+# (random_* checkpoints aren't in the manifest — their provenance is make_random_model's
+#  saved seed/like fields + V1. For the 3 trained ckpts the sha256 must MATCH.)
+
+# All SAE health blocks for the paper's health table:
+grep -A5 "GATE-1 HEALTH" /workspace/logs/sae_*.log
+
+# Copy results to the local machine (adjust host/port to the current pod):
+#   (locally)
+mkdir -p json_outputs_shuffled
+scp -P <PORT> "<USER>@<HOST>:/workspace/outputs/rsa_*.json" json_outputs_shuffled/
+scp -P <PORT> "<USER>@<HOST>:/workspace/outputs/hier_*.json" json_outputs_shuffled/
+scp -P <PORT> "<USER>@<HOST>:/workspace/outputs/meta_*.json" json_outputs_shuffled/
+scp -P <PORT> "<USER>@<HOST>:/workspace/outputs/figures/hierarchy.pdf" json_outputs_shuffled/
+scp -P <PORT> "<USER>@<HOST>:/workspace/outputs/concept_sig_*.npz" json_outputs_shuffled/
+scp -P <PORT> "<USER>@<HOST>:/workspace/logs/*" json_outputs_shuffled/logs/
+
+# THE ordering-robustness row (first-slice vs shuffled; pre-registered criterion 0.03).
+# In this repository the two dirs are results/firstslice_baseline and results/:
+python3 compare_runs.py --old results/firstslice_baseline --new results
+
+# Tier-5 check on the first-slice run: all stored rsa_*.json regenerate from the stored
+# signatures to float noise (<5e-6). KNOWN EXCEPTION: the first-slice rsa_ceiling_H.json
+# (rho 0.935) is STALE — from an earlier probe state; the correct stored ceiling is
+# rsa_ceiling.json (rho 0.932), which matches the paper. Do not quote rsa_ceiling_H.json.
+
+
+ORDER / DEPENDENCIES:
+  Step 0 -> 1 -> smoke -> 2 -> 3 -> 4 -> 5 -> 6.
+  GPU time: ~7-9 h total (Steps 2-4, incl. T4b + hierarchy). Step 5 minutes, Step 6 minutes.
+  Within a block: extract -> SAE(s) -> ALL probes + hierarchy + slice + meta copy -> rm.
+  NEVER rm a memmap before its raw probe / T5 / hierarchy eval have run (re-extraction
+  is the only recovery). Eval slices in $ARTIFACT_DIR/eval/ are the A8 fallback — keep
+  them until the figure is final.
+
+Deferred to FUTURE WORK (do not run): H6 dRSA, T1/T2 form-RDM, model-seed ceiling,
+157M spot check. T3 cognate split is CPU-only over saved signatures + tokenizer.

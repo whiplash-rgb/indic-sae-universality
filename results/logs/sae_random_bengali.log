@@ -1,0 +1,35 @@
+[train] random_bengali layer 3 | 25,000,000 tokens | d_model=512 | scale=0.9261 | device=cuda
+  step     0/6000  recon=0.8582  aux=0.0000  dead~0%  (theta warming)
+  step   250/6000  recon=0.4733  aux=0.0000  dead~0%  (theta warming)
+  step   500/6000  recon=0.1774  aux=0.0000  dead~0%
+  step   750/6000  recon=0.1080  aux=0.0000  dead~0%
+  step  1000/6000  recon=0.0821  aux=0.0000  dead~0%
+  step  1250/6000  recon=0.0701  aux=0.0000  dead~0%
+  step  1500/6000  recon=0.0645  aux=0.0000  dead~0%
+  step  1750/6000  recon=0.0605  aux=0.0000  dead~0%
+  step  2000/6000  recon=0.0592  aux=0.0000  dead~0%
+  step  2250/6000  recon=0.0573  aux=0.0012  dead~0%
+  step  2500/6000  recon=0.0556  aux=0.0011  dead~1%
+  step  2750/6000  recon=0.0549  aux=0.0011  dead~2%
+  step  3000/6000  recon=0.0543  aux=0.0010  dead~4%
+  step  3250/6000  recon=0.0532  aux=0.0010  dead~7%
+  step  3500/6000  recon=0.0532  aux=0.0009  dead~9%
+  step  3750/6000  recon=0.0527  aux=0.0009  dead~10%
+  step  4000/6000  recon=0.0523  aux=0.0009  dead~12%
+  step  4250/6000  recon=0.0519  aux=0.0009  dead~13%
+  step  4500/6000  recon=0.0516  aux=0.0009  dead~13%
+  step  4750/6000  recon=0.0510  aux=0.0009  dead~13%
+  step  5000/6000  recon=0.0506  aux=0.0008  dead~14%
+  step  5250/6000  recon=0.0506  aux=0.0008  dead~14%
+  step  5500/6000  recon=0.0504  aux=0.0008  dead~14%
+  step  5750/6000  recon=0.0501  aux=0.0008  dead~14%
+  step  5999/6000  recon=0.0501  aux=0.0008  dead~15%
+
+====================================================
+GATE-1 HEALTH (1,000,000 tokens):
+  variance explained :  99.9%   (target >= 85%)
+  L0 (active/token)  :  31.9     (target ~= 32)
+  dead features      :  72.8%   (target < 10%)
+  VERDICT: FAIL -- see notes in PAPER_PLAN
+====================================================
+[train] saved -> /workspace/outputs/random_bengali_layer3_batchtopk.pt

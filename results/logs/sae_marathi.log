@@ -1,0 +1,35 @@
+[train] marathi_54M layer 3 | 25,000,000 tokens | d_model=512 | scale=0.7427 | device=cuda
+  step     0/6000  recon=0.6726  aux=0.0000  dead~0%  (theta warming)
+  step   250/6000  recon=0.5078  aux=0.0000  dead~0%  (theta warming)
+  step   500/6000  recon=0.3360  aux=0.0000  dead~0%
+  step   750/6000  recon=0.2862  aux=0.0000  dead~0%
+  step  1000/6000  recon=0.2637  aux=0.0000  dead~0%
+  step  1250/6000  recon=0.2541  aux=0.0000  dead~0%
+  step  1500/6000  recon=0.2492  aux=0.0000  dead~0%
+  step  1750/6000  recon=0.2440  aux=0.0000  dead~0%
+  step  2000/6000  recon=0.2378  aux=0.0000  dead~0%
+  step  2250/6000  recon=0.2342  aux=0.0000  dead~0%
+  step  2500/6000  recon=0.2364  aux=0.0000  dead~0%
+  step  2750/6000  recon=0.2318  aux=0.0000  dead~0%
+  step  3000/6000  recon=0.2299  aux=0.0000  dead~0%
+  step  3250/6000  recon=0.2292  aux=0.0000  dead~0%
+  step  3500/6000  recon=0.2289  aux=0.0000  dead~0%
+  step  3750/6000  recon=0.2263  aux=0.0000  dead~0%
+  step  4000/6000  recon=0.2253  aux=0.0000  dead~0%
+  step  4250/6000  recon=0.2251  aux=0.0000  dead~0%
+  step  4500/6000  recon=0.2225  aux=0.0000  dead~0%
+  step  4750/6000  recon=0.2219  aux=0.0000  dead~0%
+  step  5000/6000  recon=0.2233  aux=0.0000  dead~0%
+  step  5250/6000  recon=0.2228  aux=0.0000  dead~0%
+  step  5500/6000  recon=0.2227  aux=0.0000  dead~0%
+  step  5750/6000  recon=0.2214  aux=0.0000  dead~0%
+  step  5999/6000  recon=0.2206  aux=0.0000  dead~0%
+
+====================================================
+GATE-1 HEALTH (1,000,000 tokens):
+  variance explained :  78.7%   (target >= 85%)
+  L0 (active/token)  :  32.0     (target ~= 32)
+  dead features      :   0.0%   (target < 10%)
+  VERDICT: FAIL -- see notes in PAPER_PLAN
+====================================================
+[train] saved -> /workspace/outputs/marathi_54M_layer3_batchtopk.pt

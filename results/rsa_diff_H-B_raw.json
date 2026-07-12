@@ -1,0 +1,17 @@
+{
+  "label": "H-B_raw",
+  "n_concepts": 129,
+  "rho_trained": 0.46521739099936577,
+  "rho_floor": 0.30037713195078275,
+  "delta": 0.16484025904858302,
+  "ci_lo": -0.011506075330722777,
+  "ci_hi": 0.3372728811046177,
+  "boots": 10000,
+  "ci_excludes_zero": false,
+  "bonferroni_m": 3,
+  "ci_corrected_level": 0.9833333333333333,
+  "ci_corrected_lo": -0.05772028731019268,
+  "ci_corrected_hi": 0.3792780946368571,
+  "ci_corrected_excludes_zero": false,
+  "common_with": []
+}

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+artifacts/
+checkpoints/
+*.f16
+*.i32
+hf_cache/
