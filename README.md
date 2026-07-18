@@ -27,9 +27,10 @@ Every number in the paper regenerates from this repository.
 ## Reproducing
 
 SLM checkpoints and corpora are the public Regional-TinyStories releases
-(cited in the paper). Point `CKPT_DIR` at the checkpoints and follow
-`RUNBOOK.txt` (Steps 0–6, ~8 GPU-hours on one A40). The statistics reproduce
-from `results/` alone in minutes on CPU:
+(cited in the paper). SAE checkpoints are not stored here; they retrain
+end-to-end from the pinned seeds in `RUNBOOK.txt`. Point `CKPT_DIR` at the
+checkpoints and follow `RUNBOOK.txt` (Steps 0–6, ~8 GPU-hours on one A40).
+The statistics reproduce from `results/` alone in minutes on CPU:
 
 ```
 export SAE_CKPT_DIR=results
