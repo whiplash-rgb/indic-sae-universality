@@ -1,6 +1,5 @@
 """Central configuration: paths, device, defaults."""
 import os
-import torch
 
 CKPT_DIR = os.environ.get("CKPT_DIR", "./checkpoints")
 
@@ -30,14 +29,21 @@ os.makedirs(ARTIFACT_DIR, exist_ok=True)
 os.makedirs(SAE_CKPT_DIR, exist_ok=True)
 
 
-def get_device():
-    if torch.backends.mps.is_available():
-        return "mps"
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"
+# torch is required only for the GPU pipeline; the statistics scripts
+# (rsa_match, rsa_diff, diagnostic_sims, compare_runs) run without it.
+try:
+    import torch
 
-DEVICE = get_device()
+    def get_device():
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+        return "cpu"
+
+    DEVICE = get_device()
+except ModuleNotFoundError:
+    DEVICE = "cpu"
 
 DEFAULT_LAYER = 3
 
