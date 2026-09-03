@@ -1,0 +1,20 @@
+{
+  "label": "M-B_common_floorB",
+  "n_concepts": 129,
+  "rho_trained": 0.4994334869461736,
+  "rho_floor": 0.2713016947344375,
+  "delta": 0.22813179221173613,
+  "ci_lo": 0.05807936302583189,
+  "ci_hi": 0.38824838265889167,
+  "boots": 10000,
+  "ci_excludes_zero": true,
+  "bonferroni_m": 3,
+  "ci_corrected_level": 0.9833333333333333,
+  "ci_corrected_lo": 0.02491768597465756,
+  "ci_corrected_hi": 0.4262765442853586,
+  "ci_corrected_excludes_zero": true,
+  "common_with": [
+    "concept_sig_hindi.npz",
+    "concept_sig_random_hindi.npz"
+  ]
+}

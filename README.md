@@ -40,6 +40,25 @@ python rsa_diff.py --ta concept_sig_hindi.npz --tb concept_sig_bengali.npz \
 python diagnostic_sims.py   # Appendix A tables
 ```
 
+### Marathi–Bengali composition control, floor draw B
+
+The seed-B random-Marathi signature (`concept_sig_random_marathi_b.npz`) was
+inadvertently omitted from the initial release and is now included, with its
+`meta`, floor RSA (`rsa_floor_M-B_b.json`), and the paired-bootstrap results
+(`rsa_diff_M-B_common_floorB.json` and `_m10`). The original draw-B model was
+not retained, so this signature is an independently regenerated draw under the
+same protocol (Marathi shuffle seed 202, floor init seed 6,
+`--min-occ 60 --fixed-occ 60`, 25M tokens, layer 3). The regenerated comparison gives Δρ = 0.228 (floor ρ = 0.271), versus Δρ = 0.218 (floor ρ = 0.282) reported in the submitted paper; the same m=3 corrected inference is obtained.
+
+```
+export SAE_CKPT_DIR=results
+python rsa_diff.py --ta concept_sig_marathi.npz --tb concept_sig_bengali.npz \
+       --fa concept_sig_random_marathi_b.npz --fb concept_sig_random_bengali_b.npz \
+       --label M-B_common_floorB \
+       --common-with concept_sig_hindi.npz concept_sig_random_hindi.npz \
+       --boots 10000 --bonferroni 3
+```
+
 ## Seeds and provenance
 
 Shuffle seeds: Hindi 101, Marathi 202, Bengali 303 (shared within a language,

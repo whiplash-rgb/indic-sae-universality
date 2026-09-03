@@ -331,3 +331,29 @@ ORDER / DEPENDENCIES:
 
 Deferred to FUTURE WORK (do not run): H6 dRSA, T1/T2 form-RDM, model-seed ceiling,
 157M spot check. T3 cognate split is CPU-only over saved signatures + tokenizer.
+
+
+ADDENDUM (release fix) — Marathi floor draw B
+  The seed-B random-Marathi branch was regenerated to close a release gap: its
+  signature was missing from results/. Same protocol as the other floors.
+
+    python make_random_model.py --like hindi_54M --seed 6 --out $CKPT_DIR/random_marathi_b.pt
+    python extract_real.py --model random_marathi_b --layer 3 --target-tokens 25000000 \
+           --shuffle-stories --shuffle-seed 202 --hf-cache /workspace/cache
+    python train_batchtopk.py --acts $ARTIFACT_DIR/real/random_marathi_b_layer3 \
+           2>&1 | tee /workspace/logs/sae_random_marathi_b.log
+    python concept_probe.py --model random_marathi_b --acts $ARTIFACT_DIR/real/random_marathi_b_layer3 \
+           --tag random_marathi_b --min-occ 60 --fixed-occ 60
+    cp $ARTIFACT_DIR/real/random_marathi_b_layer3/meta.json $SAE_CKPT_DIR/meta_random_marathi_b.json
+    rm -rf $ARTIFACT_DIR/real/random_marathi_b_layer3
+
+  Stats (CPU, from results/):
+    python rsa_match.py --a concept_sig_random_marathi_b.npz --b concept_sig_random_bengali_b.npz --label floor_M-B_b
+    python rsa_diff.py --ta concept_sig_marathi.npz --tb concept_sig_bengali.npz \
+           --fa concept_sig_random_marathi_b.npz --fb concept_sig_random_bengali_b.npz \
+           --label M-B_common_floorB --common-with concept_sig_hindi.npz concept_sig_random_hindi.npz \
+           --boots 10000 --bonferroni 3
+
+  Result: floor 0.271, delta 0.228, m=3 [0.025, 0.426] (excludes 0), m=10 [-0.005, 0.461]
+  (includes 0). This is a regenerated draw; the submitted PDF reported floor 0.282 /
+  delta 0.218 from the original (unretained) draw B — the gap is floor-draw variance.
